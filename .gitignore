@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 credentials.json
 token.json
+config.json
 
 # C extensions
 *.so
