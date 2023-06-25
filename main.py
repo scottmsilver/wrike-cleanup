@@ -11,7 +11,7 @@ from google.oauth2.credentials import Credentials
 import subprocess
 import shutil
 
-# Set your Wrike API token here
+# Load thew wrike API token.
 with open('config.json', 'r') as config_file:
     config = json.load(config_file)
 
@@ -43,8 +43,7 @@ def list_attachments_in_task(task_id):
     data = json.loads(response.text)
     return data['data']
 
-# Get one of these from cloud console with a project set up to be able to access
-# the Google Drive API
+# Returns credentials by either reading from token.json or acquiring one from credentials.json
 def get_google_drive_credentials():
   creds = None
   if os.path.exists('token.json'):
@@ -60,6 +59,8 @@ def get_google_drive_credentials():
           token.write(creds.to_json())
   return creds
 
+# The main worker for a given attachment.
+# folder_id is the Google Drive folder id where to store originals.
 def process_attachments(attachment, folder_id):
     # 1. Download the attachment
     url = f"{BASE_URL}/attachments/{attachment['id']}/download"
@@ -115,7 +116,8 @@ def process_attachments(attachment, folder_id):
     # Clean up the downloaded original file
     os.remove(original_filename)
 
-
+# Get or create folder in google drive given the reference to the service.
+# Returns the folder_id created.
 def get_or_create_folder(service, folder_name):
     query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
     response = service.files().list(q=query).execute()
@@ -141,7 +143,7 @@ service = build('drive', 'v3', credentials=creds)
 folder_name = 'Wrike Backup'
 folder_id = get_or_create_folder(service, folder_name)
 
-# Main code
+# Main woker to loop through all attachments.
 workspaces = list_workspaces()
 one_year_ago = datetime.datetime.now() - datetime.timedelta(days=365)
 for workspace in workspaces:
