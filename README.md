@@ -30,6 +30,6 @@ python main.py
 ```
 
 When you first use it it will prompt you to login to Google and give it access to Google Drive.
-This will create a token.json file which caching credentials for subsequent runs.
+This will create a token.json file which caches credentials for subsequent runs.
 
 
