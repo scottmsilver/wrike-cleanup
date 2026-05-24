@@ -699,14 +699,19 @@ def step5_artifact_registry_and_build(cfg: dict) -> None:
         )
         print("  Created Artifact Registry repo 'preview'.")
 
-    print(f"  Building container image (this may take several minutes)...\n" f"    {image}")
+    print(f"  Building container image (cached layers reused if available)...\n" f"    {image}")
+    # Use preview/cloudbuild.yaml so the previous image is pulled and used
+    # as a --cache-from source. First build is full (~5-10 min); subsequent
+    # code-only rebuilds finish in ~30 sec because the LibreOffice apt layer
+    # cache-hits.
     sh(
         [
             "gcloud",
             "builds",
             "submit",
             "preview/",
-            f"--tag={image}",
+            "--config=preview/cloudbuild.yaml",
+            f"--substitutions=_IMAGE={image.rsplit(':', 1)[0]}",
             "--project",
             project,
         ]
