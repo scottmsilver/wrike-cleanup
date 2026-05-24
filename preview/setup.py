@@ -13,6 +13,8 @@ Usage:
 """
 
 import argparse
+import csv
+import io
 import json
 import secrets
 import subprocess
@@ -179,6 +181,144 @@ def run_step(step_fn, *args, **kwargs):
 
 
 # ---------------------------------------------------------------------------
+# Billing preflight
+# ---------------------------------------------------------------------------
+
+
+def ensure_billing_linked(project: str) -> None:
+    """Ensure a billing account is linked to *project* before enabling APIs.
+
+    In dry-run mode, just prints what would be checked/done and returns.
+    In non-interactive mode, errors out if billing is not already linked.
+    """
+    if _dry_run():
+        print("  [dry-run] Skipping billing account check.")
+        print(f"  [dry-run] gcloud beta billing projects describe {project}")
+        print("  [dry-run] gcloud beta billing accounts list")
+        print(f"  [dry-run] gcloud beta billing projects link {project}" " --billing-account=<chosen>")
+        return
+
+    # --- 1. Check current billing status ---
+    billing_name = sh(
+        [
+            "gcloud",
+            "beta",
+            "billing",
+            "projects",
+            "describe",
+            project,
+            "--format=value(billingAccountName)",
+        ],
+        capture=True,
+        check=False,
+    )
+    if billing_name:
+        # Strip "billingAccounts/" prefix for display
+        short_id = billing_name.removeprefix("billingAccounts/")
+        print(f"  Billing already linked: {short_id}")
+        return
+
+    # --- 2. Billing not linked — list open accounts ---
+    if _non_interactive():
+        sys.exit(
+            f"ERROR: Billing not linked for project {project!r}.\n"
+            f"  Run: gcloud beta billing projects link {project} --billing-account=ACCOUNT_ID\n"
+            "  Or re-run setup interactively."
+        )
+
+    accounts_csv = sh(
+        [
+            "gcloud",
+            "beta",
+            "billing",
+            "accounts",
+            "list",
+            "--filter=open=true",
+            "--format=csv(name,displayName)",
+        ],
+        capture=True,
+        check=False,
+    )
+
+    # Parse CSV (header row + data rows)
+    accounts: list[tuple[str, str]] = []
+    if accounts_csv:
+        reader = csv.DictReader(io.StringIO(accounts_csv))
+        for row in reader:
+            raw_name = (row.get("name") or "").strip()
+            display_name = (row.get("displayName") or "").strip()
+            if not raw_name:
+                continue
+            account_id = raw_name.removeprefix("billingAccounts/")
+            accounts.append((account_id, display_name))
+
+    # --- 3. No open billing accounts ---
+    if not accounts:
+        print(
+            "\n  WARNING: No open billing accounts found.\n"
+            "  Create one at: https://console.cloud.google.com/billing/create\n"
+            "  Then re-run this setup, or link manually:\n"
+            f"    gcloud beta billing projects link {project} --billing-account=ACCOUNT_ID"
+        )
+        while True:
+            choice = input("  [C]ontinue anyway / [R]etry / [A]bort? ").strip().upper() or "A"
+            if choice.startswith("C"):
+                return
+            if choice.startswith("R"):
+                ensure_billing_linked(project)
+                return
+            sys.exit(1)
+
+    # --- 4. Let operator pick an account ---
+    print(f"\n  Found {len(accounts)} open billing account(s):")
+    for i, (acct_id, display_name) in enumerate(accounts, start=1):
+        print(f"    [{i}] {acct_id}  {display_name}")
+
+    default_choice = "1"
+    raw = (
+        prompt(
+            f"  Pick one to link to project {project!r} (or 's' to skip)",
+            default=default_choice,
+        )
+        .strip()
+        .lower()
+    )
+
+    if raw == "s":
+        print(
+            "  Skipping billing link. NOTE: the next step (enable APIs) will fail\n"
+            "  until you link a billing account manually:\n"
+            f"    gcloud beta billing projects link {project} --billing-account=ACCOUNT_ID"
+        )
+        return
+
+    try:
+        idx = int(raw) - 1
+        if not (0 <= idx < len(accounts)):
+            raise ValueError
+    except ValueError:
+        print(f"  Invalid choice {raw!r}; defaulting to [1].")
+        idx = 0
+
+    chosen_id = accounts[idx][0]
+
+    # --- 5. Link the chosen account ---
+    print(f"  Linking billing account {chosen_id!r} to project {project!r} ...")
+    sh(
+        [
+            "gcloud",
+            "beta",
+            "billing",
+            "projects",
+            "link",
+            project,
+            f"--billing-account={chosen_id}",
+        ]
+    )
+    print(f"  Billing account {chosen_id!r} linked.")
+
+
+# ---------------------------------------------------------------------------
 # Step 1: GCP project + APIs
 # ---------------------------------------------------------------------------
 
@@ -204,6 +344,10 @@ def step1_project_and_apis(cfg: dict) -> None:
         sh(["gcloud", "projects", "create", project])
 
     sh(["gcloud", "config", "set", "project", project])
+
+    # Billing preflight — must be linked before APIs can be enabled
+    print("  Checking billing account ...")
+    ensure_billing_linked(project)
 
     # Enable APIs (gcloud is idempotent here)
     apis = [
