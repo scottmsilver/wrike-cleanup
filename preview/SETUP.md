@@ -2,6 +2,25 @@
 
 One-time GCP wiring for the Wrike preview service. Assumes `gcloud` is installed and authenticated.
 
+## Quick path: interactive script
+
+Run from the repo root:
+
+```bash
+python preview/setup.py
+```
+
+This walks through every step below interactively, prompts for project ID / region, auto-generates the random secrets, reads your Wrike token from `config.json` if present, and handles the two-pass deploy dance (initial deploy → capture URL → redeploy with `OIDC_AUDIENCE`). It's idempotent — safe to re-run.
+
+Flags:
+- `--dry-run` — print every `gcloud` command without executing.
+- `--project <id>` / `--region <r>` — skip prompts.
+- `--non-interactive` — fail on any missing input (for CI).
+
+The manual sections below document what the script does, in case you want to run individual steps yourself.
+
+---
+
 ## 1. Project + APIs
 
 ```bash
