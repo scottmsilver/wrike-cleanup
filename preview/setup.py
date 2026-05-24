@@ -13,8 +13,6 @@ Usage:
 """
 
 import argparse
-import csv
-import io
 import json
 import secrets
 import subprocess
@@ -226,7 +224,11 @@ def ensure_billing_linked(project: str) -> None:
             "  Or re-run setup interactively."
         )
 
-    accounts_csv = sh(
+    # Use --format=json to avoid gcloud's csv column-aliasing surprises:
+    # `--format=csv(name,displayName)` actually returns columns named
+    # `account_id,name` for billing accounts, which silently drops the ID
+    # if we DictReader-lookup by the field name we asked for.
+    accounts_json = sh(
         [
             "gcloud",
             "beta",
@@ -234,19 +236,21 @@ def ensure_billing_linked(project: str) -> None:
             "accounts",
             "list",
             "--filter=open=true",
-            "--format=csv(name,displayName)",
+            "--format=json",
         ],
         capture=True,
         check=False,
     )
 
-    # Parse CSV (header row + data rows)
     accounts: list[tuple[str, str]] = []
-    if accounts_csv:
-        reader = csv.DictReader(io.StringIO(accounts_csv))
-        for row in reader:
-            raw_name = (row.get("name") or "").strip()
-            display_name = (row.get("displayName") or "").strip()
+    if accounts_json:
+        try:
+            data = json.loads(accounts_json)
+        except json.JSONDecodeError:
+            data = []
+        for entry in data:
+            raw_name = (entry.get("name") or "").strip()
+            display_name = (entry.get("displayName") or "").strip()
             if not raw_name:
                 continue
             account_id = raw_name.removeprefix("billingAccounts/")
