@@ -32,7 +32,10 @@ def _make_app():
         config_path = "/tmp/wrike-config.json"
 
     if not os.path.exists(config_path):
-        token = os.environ.get("WRIKE_API_TOKEN", "")
+        # Strip any stray whitespace/newlines a Secret Manager value might have
+        # picked up from a `... | gcloud secrets versions add --data-file=-`
+        # invocation that didn't trim its input.
+        token = os.environ.get("WRIKE_API_TOKEN", "").strip()
         if not token:
             raise RuntimeError(
                 "Wrike credentials missing: set WRIKE_CONFIG_PATH to a JSON file "
@@ -40,7 +43,13 @@ def _make_app():
             )
         Path(config_path).parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w") as fh:
-            fh.write(f'{{"WRIKE_API_TOKEN":"{token}"}}\n')
+            # json.dump escapes special chars properly; hand-built f-string
+            # JSON breaks on tokens with embedded quotes, backslashes, or
+            # newlines.
+            import json as _json
+
+            _json.dump({"WRIKE_API_TOKEN": token}, fh)
+            fh.write("\n")
     wrike = WrikeApi(config_path)
 
     signing_secret = os.environ.get("WEBHOOK_SIGNING_SECRET", "")

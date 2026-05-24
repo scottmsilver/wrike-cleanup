@@ -505,6 +505,10 @@ def _read_config_token() -> str | None:
 
 
 def _create_secret(name: str, value: str, project: str) -> None:
+    # `gcloud secrets create --data-file=-` stores the entire stdin payload
+    # verbatim, including any trailing whitespace. A trailing newline in a
+    # Wrike API token or webhook signing secret will silently break auth
+    # later. Strip before storing.
     sh(
         [
             "gcloud",
@@ -515,7 +519,7 @@ def _create_secret(name: str, value: str, project: str) -> None:
             "--project",
             project,
         ],
-        input_text=value,
+        input_text=value.strip(),
     )
 
 
