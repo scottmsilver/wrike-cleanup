@@ -216,12 +216,20 @@ def ensure_billing_linked(project: str) -> None:
         print(f"  Billing already linked: {short_id}")
         return
 
-    # --- 2. Billing not linked — list open accounts ---
+    # --- 2a. Caller pre-specified the account via --billing-account ---
+    if _args is not None and getattr(_args, "billing_account", None):
+        chosen = _args.billing_account
+        print(f"  Linking pre-selected billing account {chosen!r} to project {project!r} ...")
+        sh(["gcloud", "beta", "billing", "projects", "link", project, f"--billing-account={chosen}"])
+        print(f"  Billing account {chosen!r} linked.")
+        return
+
+    # --- 2b. Billing not linked — list open accounts ---
     if _non_interactive():
         sys.exit(
             f"ERROR: Billing not linked for project {project!r}.\n"
             f"  Run: gcloud beta billing projects link {project} --billing-account=ACCOUNT_ID\n"
-            "  Or re-run setup interactively."
+            "  Or pass --billing-account=ACCOUNT_ID, or re-run setup interactively."
         )
 
     # Use --format=json to avoid gcloud's csv column-aliasing surprises:
@@ -949,7 +957,18 @@ def step10_register_webhook(cfg: dict) -> None:
     print("\n=== Step 10: Register Wrike webhook (optional) ===")
     print("Register the webhook so Wrike notifies this service when attachments are added.")
 
-    if not confirm("  Register Wrike webhook now?", default=True):
+    # Caller can pre-answer this prompt via --register-webhook yes|no
+    preset = getattr(_args, "register_webhook", None) if _args is not None else None
+    if preset == "yes":
+        should_register = True
+        print("  --register-webhook=yes; proceeding without prompt.")
+    elif preset == "no":
+        should_register = False
+        print("  --register-webhook=no; skipping.")
+    else:
+        should_register = confirm("  Register Wrike webhook now?", default=True)
+
+    if not should_register:
         cfg["webhook_registered"] = False
         print(
             "  Skipped. Register later with:\n"
@@ -1069,6 +1088,18 @@ def parse_args() -> argparse.Namespace:
         "--non-interactive",
         action="store_true",
         help="Error rather than prompt for missing values (for CI).",
+    )
+    parser.add_argument(
+        "--billing-account",
+        metavar="ACCOUNT_ID",
+        default=None,
+        help="Billing account ID to link (skip the interactive picker).",
+    )
+    parser.add_argument(
+        "--register-webhook",
+        choices=["yes", "no"],
+        default=None,
+        help="Auto-answer the final Wrike webhook registration prompt.",
     )
     return parser.parse_args()
 
