@@ -1,0 +1,23 @@
+services:
+  firestore:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: 'gcloud emulators firestore start --host-port=0.0.0.0:8080 --database-mode=firestore-native
+
+      '
+    ports:
+    - 8080:8080
+  app:
+    build: .
+    environment:
+      FIRESTORE_EMULATOR_HOST: firestore:8080
+      GOOGLE_CLOUD_PROJECT: local-dev
+      WRIKE_API_TOKEN: ${WRIKE_API_TOKEN}
+      WEBHOOK_SIGNING_SECRET: devsecret
+      INTERNAL_SECRET: devinternal
+      DEV_MODE: '1'
+    ports:
+    - 5000:5000
+    depends_on:
+    - firestore
+    volumes:
+    - ./:/app

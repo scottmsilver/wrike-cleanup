@@ -165,3 +165,7 @@ cython_debug/
 
 preview/test-fixtures/*
 !preview/test-fixtures/README.md
+
+# Wrike credentials — never commit, even if WRIKE_CONFIG_PATH is overridden
+/app/wrike-config.json
+wrike-config.json
