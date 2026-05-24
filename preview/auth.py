@@ -24,16 +24,35 @@ def check_internal_secret(request_headers) -> bool:
 
 
 def check_oidc_token(request_headers) -> bool:
-    """Placeholder. Phase 6 (Task 22) replaces this with real
-    google.oauth2.id_token verification."""
+    """Verify a Google-issued OIDC token (from Cloud Scheduler).
+
+    Caches Google's public keys via the underlying transport; lookups are fast
+    after the first verification."""
     if is_dev_mode():
         return True
     auth = request_headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return False
-    # TODO Phase 6: validate the JWT against Google's JWKS.
-    # For now, in non-dev mode, this returns False — Phase 6 will replace.
-    return False
+    token = auth[len("Bearer ") :]
+    try:
+        from google.auth.transport import requests as ga_requests
+        from google.oauth2 import id_token
+
+        expected_audience = os.environ.get("OIDC_AUDIENCE", "")
+        if not expected_audience:
+            # Without an expected audience, we'd accept any valid Google OIDC token.
+            # Refuse in prod rather than silently degrade security.
+            return False
+
+        request_adapter = ga_requests.Request()
+        claims = id_token.verify_oauth2_token(token, request_adapter, audience=expected_audience)
+
+        expected_sa = os.environ.get("SCHEDULER_SA_EMAIL", "")
+        if expected_sa and claims.get("email") != expected_sa:
+            return False
+        return True
+    except Exception:
+        return False
 
 
 def authorize_scheduler_request(request_headers) -> bool:
