@@ -106,7 +106,12 @@ def _run_pipeline(store, wrike, attachment_id, attempts):
             # Other ConvertError codes are transient (retry).
             raise
 
-        upload_name = f"preview_{attachment_id}.pdf"
+        # Preserve the original stem so the preview is recognizable in the
+        # Wrike UI. Embed the source attachment ID so the file is unique per
+        # source and our self-output guard can identify it via the
+        # `_<ID>_preview.pdf` suffix.
+        original_stem = Path(meta["name"]).stem
+        upload_name = f"{original_stem}_{attachment_id}_preview.pdf"
         new_id = wrike.add_file_to_task(task_id, pdf_path, upload_name=upload_name)
 
     store.mark_done(attachment_id, preview_id=new_id, preview_name=upload_name)

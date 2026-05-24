@@ -26,8 +26,21 @@ def test_image_is_skip_already_previewable():
     assert r == ClassifyResult(action="skip", reason="already_previewable")
 
 
-def test_preview_filename_is_skip_self_output():
+def test_preview_filename_v1_legacy_is_skip_self_output():
+    # Legacy format: preview_<id>.pdf
     r = classify_attachment(_attach("preview_IEAAA12345.pdf"))
+    assert r == ClassifyResult(action="skip", reason="filename_is_preview")
+
+
+def test_preview_filename_v2_is_skip_self_output():
+    # Current format: <originalStem>_<id>_preview.pdf
+    r = classify_attachment(_attach("report_IEAAA12345_preview.pdf"))
+    assert r == ClassifyResult(action="skip", reason="filename_is_preview")
+
+
+def test_preview_filename_v2_with_spaces_is_skip_self_output():
+    # Real Wrike filenames have spaces; v2 regex must still match.
+    r = classify_attachment(_attach("STONE MT MANAGEMENT 2026_IEAENETVIYVQEIXO_preview.pdf"))
     assert r == ClassifyResult(action="skip", reason="filename_is_preview")
 
 

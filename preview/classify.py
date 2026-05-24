@@ -2,7 +2,14 @@ import re
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-PREVIEW_FILENAME_RE = re.compile(r"^preview_[A-Z0-9]+\.pdf$", re.IGNORECASE)
+# Matches our own output filenames so the webhook doesn't reprocess them.
+#   New format (v2):    <originalStem>_<attachmentId>_preview.pdf
+#   Legacy format (v1): preview_<attachmentId>.pdf
+# Attachment IDs are uppercase alphanumeric in practice; IGNORECASE for robustness.
+PREVIEW_FILENAME_RE = re.compile(
+    r"(.+_[A-Z0-9]+_preview\.pdf|^preview_[A-Z0-9]+\.pdf)$",
+    re.IGNORECASE,
+)
 
 CONVERTIBLE_EXTS = {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}
 ALREADY_PREVIEWABLE_EXTS = {
