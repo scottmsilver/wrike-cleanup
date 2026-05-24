@@ -9,12 +9,12 @@ from flask import Flask, make_response, request
 from google.cloud import firestore
 
 sys.path.insert(0, str(Path(__file__).parent.parent))  # so we can import wrike
-from wrike import WrikeApi
-
 from auth import authorize_scheduler_request
 from store import Store
 from webhook_auth import compute_handshake_response, verify_event_signature
 from worker import process_one_job
+
+from wrike import WrikeApi
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("preview")
@@ -114,8 +114,11 @@ def _make_app():
         if not authorize_scheduler_request(request.headers):
             log.warning("reconcile: unauthorized")
             return ("", 200)
-        # Implementation comes in Phase 5.
-        return ({"status": "not_yet_implemented"}, 200)
+        from reconcile import reconcile_one_chunk
+
+        result = reconcile_one_chunk(store, wrike)
+        log.info("reconcile %s", result)
+        return (result, 200)
 
     return app
 
