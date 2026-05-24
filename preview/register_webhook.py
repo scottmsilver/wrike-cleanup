@@ -10,10 +10,7 @@ Prints the webhook id on success. Save it; you'll need it to delete the webhook 
 
 import argparse
 import json
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 import requests
 
 from wrike import WrikeApi

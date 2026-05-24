@@ -2,13 +2,11 @@
 
 import logging
 import os
-import sys
 from pathlib import Path
 
 from flask import Flask, make_response, request
 from google.cloud import firestore
 
-sys.path.insert(0, str(Path(__file__).parent.parent))  # so we can import wrike
 from auth import authorize_scheduler_request
 from store import Store
 from webhook_auth import compute_handshake_response, verify_event_signature

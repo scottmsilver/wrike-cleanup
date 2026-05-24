@@ -130,6 +130,7 @@ def _supersede_old_versions(store, wrike, current_attachment_id, task_id, origin
         .where("taskId", "==", task_id)
         .where("originalName", "==", original_name)
         .where("status", "==", "done")
+        .order_by("taskId")
         .stream()
     )
     for snap in prior:

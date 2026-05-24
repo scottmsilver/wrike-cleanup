@@ -9,11 +9,9 @@ Requires:
 """
 
 import argparse
-import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))  # so we can import wrike
 
 from wrike import WrikeApi
 
