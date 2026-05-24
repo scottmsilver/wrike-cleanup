@@ -406,29 +406,58 @@ def step2_firestore(cfg: dict) -> None:
             ]
         )
 
-    # Deploy composite indexes
+    # Deploy composite indexes. gcloud firestore indexes composite create
+    # only creates ONE index per call (no --file flag, despite what the manual
+    # docs imply). We parse firestore.indexes.json and emit one call per index.
     index_file = Path("preview/firestore.indexes.json")
-    if index_file.exists() or _dry_run():
-        print("  Deploying composite indexes ...")
-        sh(
-            [
-                "gcloud",
-                "firestore",
-                "indexes",
-                "composite",
-                "create",
-                "--database=(default)",
-                f"--file={index_file}",
-                "--project",
-                project,
-            ]
-        )
-    else:
+    if not index_file.exists() and not _dry_run():
         print(
             f"  WARNING: {index_file} not found — skipping index deployment.\n"
-            "  Run manually: gcloud firestore indexes composite create "
-            "--database='(default)' --file=preview/firestore.indexes.json"
+            "  Add it later via the Firebase CLI or per-index gcloud calls."
         )
+        return
+
+    print("  Deploying composite indexes ...")
+    if _dry_run():
+        print(f"  [dry-run] (would parse {index_file} and emit one gcloud call per index)")
+        print(
+            "  [dry-run] gcloud firestore indexes composite create "
+            "--database=(default) --collection-group=jobs --query-scope=COLLECTION "
+            "--field-config field-path=status,order=ascending ..."
+        )
+        return
+
+    indexes_doc = json.loads(index_file.read_text())
+    for idx in indexes_doc.get("indexes", []):
+        collection_group = idx["collectionGroup"]
+        query_scope = idx.get("queryScope", "COLLECTION")
+        cmd = [
+            "gcloud",
+            "firestore",
+            "indexes",
+            "composite",
+            "create",
+            "--database=(default)",
+            f"--collection-group={collection_group}",
+            f"--query-scope={query_scope}",
+        ]
+        for field in idx["fields"]:
+            field_path = field["fieldPath"]
+            order = field.get("order", "ASCENDING").lower()
+            cmd += ["--field-config", f"field-path={field_path},order={order}"]
+        cmd += ["--project", project]
+
+        # gcloud errors with ALREADY_EXISTS if the index is already there;
+        # we treat that as success so the step is idempotent.
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"  Created index on {collection_group}: {[f['fieldPath'] for f in idx['fields']]}")
+        elif "ALREADY_EXISTS" in (result.stderr or "") or "already exists" in (result.stderr or "").lower():
+            print(f"  Index on {collection_group} already exists; skipping.")
+        else:
+            print(result.stdout)
+            print(result.stderr, file=sys.stderr)
+            raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
 
 
 # ---------------------------------------------------------------------------
