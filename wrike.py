@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import requests
 
@@ -54,4 +55,46 @@ class WrikeApi:
 
     def delete_attachment(self, attachment):
         url = f"{self.WRIKE_BASE_URL}/attachments/{attachment['id']}"
+        return requests.delete(url, headers=self.WRIKE_DEFAULT_HEADERS)
+
+    def get_attachment(self, attachment_id):
+        """Return the attachment metadata, or None on 404."""
+        url = f"{self.WRIKE_BASE_URL}/attachments/{attachment_id}"
+        response = requests.get(url, headers=self.WRIKE_DEFAULT_HEADERS)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()["data"][0]
+
+    def download_attachment_by_id(self, attachment_id):
+        url = f"{self.WRIKE_BASE_URL}/attachments/{attachment_id}/download"
+        return requests.get(url, headers=self.WRIKE_DEFAULT_HEADERS, stream=True)
+
+    def add_file_to_task(self, task_id, file_path, upload_name=None):
+        """Upload a file to a task with an optional override filename. Returns the new
+        attachment's id."""
+        file_path = Path(file_path)
+        upload_name = upload_name or file_path.name
+        url = f"{self.WRIKE_BASE_URL}/tasks/{task_id}/attachments"
+        with open(file_path, "rb") as fh:
+            files = {"file": (upload_name, fh)}
+            response = requests.post(url, headers=self.WRIKE_DEFAULT_HEADERS, files=files)
+        response.raise_for_status()
+        return response.json()["data"][0]["id"]
+
+    def list_account_attachments(self, created_from, created_to, next_page_token=None):
+        """List attachments in the account in a date range. Returns (items, nextPageToken)."""
+        url = f"{self.WRIKE_BASE_URL}/attachments"
+        params = {
+            "createdDate": '{"start":"' + created_from + '","end":"' + created_to + '"}',
+        }
+        if next_page_token:
+            params["nextPageToken"] = next_page_token
+        response = requests.get(url, headers=self.WRIKE_DEFAULT_HEADERS, params=params)
+        response.raise_for_status()
+        body = response.json()
+        return body["data"], body.get("responseNextPageToken")
+
+    def delete_attachment_by_id(self, attachment_id):
+        url = f"{self.WRIKE_BASE_URL}/attachments/{attachment_id}"
         return requests.delete(url, headers=self.WRIKE_DEFAULT_HEADERS)
