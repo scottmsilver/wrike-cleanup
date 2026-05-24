@@ -455,17 +455,33 @@ def step2_firestore(cfg: dict) -> None:
             cmd += ["--field-config", f"field-path={field_path},order={order}"]
         cmd += ["--project", project]
 
-        # gcloud errors with ALREADY_EXISTS if the index is already there;
-        # we treat that as success so the step is idempotent.
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            print(f"  Created index on {collection_group}: {[f['fieldPath'] for f in idx['fields']]}")
-        elif "ALREADY_EXISTS" in (result.stderr or "") or "already exists" in (result.stderr or "").lower():
-            print(f"  Index on {collection_group} already exists; skipping.")
-        else:
+        # ALREADY_EXISTS is treated as success (idempotent re-runs).
+        # PERMISSION_DENIED right after database creation is usually IAM
+        # propagation delay — retry with backoff before giving up.
+        import time as _time
+
+        retry_delays = [10, 20, 40, 80]
+        attempt = 0
+        while True:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                print(f"  Created index on {collection_group}: {[f['fieldPath'] for f in idx['fields']]}")
+                break
+            stderr = result.stderr or ""
+            if "ALREADY_EXISTS" in stderr or "already exists" in stderr.lower():
+                print(f"  Index on {collection_group} already exists; skipping.")
+                break
+            if "PERMISSION_DENIED" in stderr and attempt < len(retry_delays):
+                delay = retry_delays[attempt]
+                print(
+                    f"  PERMISSION_DENIED on index create (likely IAM propagation delay); " f"retrying in {delay}s ..."
+                )
+                _time.sleep(delay)
+                attempt += 1
+                continue
             print(result.stdout)
-            print(result.stderr, file=sys.stderr)
-            raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
+            print(stderr, file=sys.stderr)
+            raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=stderr)
 
 
 # ---------------------------------------------------------------------------
