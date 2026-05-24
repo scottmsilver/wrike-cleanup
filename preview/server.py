@@ -4,14 +4,12 @@ import logging
 import os
 from pathlib import Path
 
+from auth import authorize_scheduler_request
 from flask import Flask, make_response, request
 from google.cloud import firestore
-
-from auth import authorize_scheduler_request
 from store import Store
 from webhook_auth import compute_handshake_response, verify_event_signature
 from worker import process_one_job
-
 from wrike import WrikeApi
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -58,39 +56,62 @@ def _make_app():
         x_hook_signature = request.headers.get("X-Hook-Signature")
 
         try:
-            json_body = request.get_json(silent=True) or {}
+            json_body = request.get_json(silent=True)
         except Exception:
-            json_body = {}
+            json_body = None
 
-        # Handshake: Wrike sends a verification body with X-Hook-Secret.
-        if json_body.get("requestType") == "WebHook secret verification" and x_hook_secret:
+        # Handshake: Wrike sends a single-object verification body.
+        if (
+            isinstance(json_body, dict)
+            and json_body.get("requestType") == "WebHook secret verification"
+            and x_hook_secret
+        ):
             response_value = compute_handshake_response(signing_secret, x_hook_secret)
             r = make_response("", 200)
             r.headers["X-Hook-Secret"] = response_value
             return r
 
-        # Event delivery — verify signature.
+        # Event delivery — verify signature first.
         if not verify_event_signature(signing_secret, body, x_hook_signature):
             log.warning("webhook signature mismatch")
             return ("", 200)  # do NOT 4xx — Wrike suspends on 4xx
 
-        event_type = json_body.get("eventType")
-        if event_type != "AttachmentAdded":
+        # Wrike delivers events as a JSON array, even when there's only one.
+        # Normalize to a list of event dicts.
+        if isinstance(json_body, list):
+            events = json_body
+        elif isinstance(json_body, dict):
+            events = [json_body]
+        else:
+            log.warning("webhook body is neither list nor dict: %r", json_body)
             return ("", 200)
 
-        attachment_id = json_body.get("attachmentId")
-        task_id = json_body.get("taskId")
-        if not attachment_id:
-            log.warning("webhook event missing attachmentId: %s", json_body)
-            return ("", 200)
+        for event in events:
+            if not isinstance(event, dict):
+                log.warning("webhook event is not a dict: %r", event)
+                continue
+            if event.get("eventType") != "AttachmentAdded":
+                continue
 
-        try:
-            created = store.create_job_if_absent(attachment_id, task_id=task_id)
-            log.info("webhook attachment=%s task=%s created=%s", attachment_id, task_id, created)
-        except Exception as e:
-            # Reconcile is the safety net; log loudly and return 200 so Wrike
-            # doesn't retry-and-suspend on a Firestore outage.
-            log.error("webhook firestore write failed: %s", e)
+            attachment_id = event.get("attachmentId")
+            task_id = event.get("taskId")
+            if not attachment_id:
+                log.warning("webhook event missing attachmentId: %s", event)
+                continue
+
+            try:
+                created = store.create_job_if_absent(attachment_id, task_id=task_id)
+                log.info(
+                    "webhook attachment=%s task=%s created=%s",
+                    attachment_id,
+                    task_id,
+                    created,
+                )
+            except Exception as e:
+                # Reconcile is the safety net; log loudly and return 200 so Wrike
+                # doesn't retry-and-suspend on a Firestore outage.
+                log.error("webhook firestore write failed for %s: %s", attachment_id, e)
+
         return ("", 200)
 
     @app.post("/tick")
