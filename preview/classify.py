@@ -1,3 +1,13 @@
+"""Pure-function classifier deciding what to do with a Wrike attachment.
+
+`classify_attachment` returns a `ClassifyResult` telling the worker to either
+convert the file (Office types) or skip it with a recorded reason (already
+previewable, our own output, too large, wrong scope, wrong type).
+
+Order of checks matters and is documented inline on the function. Anything
+imported by `worker.py` should be importable without side effects.
+"""
+
 import re
 from dataclasses import dataclass
 from typing import Literal, Optional
@@ -28,6 +38,13 @@ MAX_SIZE_BYTES = 50 * 1024 * 1024  # 50 MiB
 
 @dataclass(frozen=True)
 class ClassifyResult:
+    """Outcome of classifying one attachment.
+
+    `action='convert'` → caller runs the LibreOffice pipeline; `reason` is None.
+    `action='skip'`    → caller writes status='skipped' with `reason` as the
+                          `skippedReason` field for later debugging.
+    """
+
     action: Literal["convert", "skip"]
     reason: Optional[str]
 

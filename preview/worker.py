@@ -40,6 +40,9 @@ class _PermanentFailure(Exception):
 
 
 def _record_transient(store, attachment_id, attempts, *, error, error_code):
+    """Apply backoff retry policy after a transient failure. Marks
+    `status='failed'` with `errorCode='exhausted'` once `attempts`
+    reaches `MAX_ATTEMPTS`."""
     if attempts >= MAX_ATTEMPTS:
         store.mark_failed(attachment_id, error=error, error_code="exhausted")
     else:
@@ -52,6 +55,9 @@ def _record_transient(store, attachment_id, attempts, *, error, error_code):
 
 
 def _run_pipeline(store, wrike, attachment_id, attempts):
+    """The full per-job pipeline. Raises `_PermanentFailure` for unrecoverable
+    errors (caller marks failed); raises bare exceptions for transient errors
+    (caller schedules retry via backoff)."""
     # 1. Fetch metadata
     meta = wrike.get_attachment(attachment_id)
     if meta is None:

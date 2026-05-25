@@ -1,53 +1,63 @@
 # wrike-cleanup
 
-Wrike Cleanup reduces your storage usage on Wrike by doing the following for attachments older than 1 year:
+Two related tools for Wrike accounts:
 
-- Moving it Google Drive and adding a new comment on the task with a link. (NB: permissions on backup file are wide open)
-- Attaching a smaller version of the original, if it's an image or video.
-- Deleting it.
+| Tool | What it does |
+|---|---|
+| [`main.py`](#wrike-cleanup-storage-archiver) | One-shot CLI that reclaims Wrike storage by archiving attachments older than ~1 year to Google Drive, replacing each with a half-resolution copy (for images/videos), then deleting the original. |
+| [`preview/`](preview/README.md) | Cloud Run service that auto-generates PDF previews for Office attachments (DOCX/XLSX/PPTX) so they preview natively in Wrike's UI. Real-time via webhook, with a 10-year backfill. |
 
-# Installation
+Both share `preview/wrike.py` as the Wrike API client.
 
-```pip3 install -r requirements.txt```
+---
 
-# Configuration
+## wrike-cleanup (storage archiver)
 
-You'll need to configure two files
+Reduces Wrike storage usage by, for each attachment older than `--days_old_to_replace`:
 
-## credentials.json
+- Uploads the original to Google Drive (NB: permissions on the backup file are wide open — see `create_shareable_link`).
+- Posts a comment on the task with the Drive link.
+- For images/videos, re-uploads a half-resolution copy via `ffmpeg`.
+- Deletes the original.
 
-Download a credentials.json from a new Google Cloud project with access to the Google Drive API and put it in the directory
-from where you will run wrike-cleanup (currenty working directory)
-
-## config.json
-
-Take the original config.json and get your Wrike API key and put it in there. 
-NB: wrike-cleanup will read it from the current working directory by default.
-
-# Usage
-
-This will show you what it would do. When you first use it it will prompt you to login to Google and give it access to Google Drive.
-This will create a token.json file which caches credentials for subsequent runs.
-NB: the working directory must be writable.
+### Install
 
 ```
-python main.py
+pip3 install -r requirements.txt
 ```
 
-This will actually run it with defaults, but will do something.
+Also requires `ffmpeg` on `PATH` for image/video shrinking.
+
+### Configure
+
+Two files in the working directory (both gitignored):
+
+- **`credentials.json`** — OAuth client from a Google Cloud project with the Drive API enabled. Scope used: `https://www.googleapis.com/auth/drive.file`.
+- **`config.json`** — `{"WRIKE_API_TOKEN": "..."}`. Override path with `--wrike_config_json`.
+
+First run launches a local-server OAuth flow that writes `token.json` (cached + refreshed on subsequent runs). The CWD must be writable.
+
+### Usage
 
 ```
-python main.py --no-do_nothing
-```
-Here are some other commands line arguments:
-```
---do_nothing: Don't actually do anything (opposite --no-do_nothing)
---days_old_to_replace: The number of days old to replace.
---originals_directory: The Google Drive directory where to store originals
---wrike_config_json: Where to find the config.json file with the Wrike API key  
---wrike_api_rate_limit: Limits for calling wrike api in calls per minute
+python main.py --do_nothing      # dry run — list what would be archived
+python main.py --no-do_nothing   # actually mutate Wrike + Drive
 ```
 
+> Note: `--do_nothing` uses `argparse.BooleanOptionalAction` with no default, so a bare `python main.py` evaluates `do_nothing=None` (falsy) and **will** mutate. Always pass `--do_nothing` explicitly for a true dry run.
 
+Flags:
+- `--do_nothing` / `--no-do_nothing` — toggle mutation.
+- `--days_old_to_replace` (int, default `365`).
+- `--default_directory` (str, default `"Wrike Backup"`) — Google Drive folder name for archives.
+- `--wrike_config_json` (str, default `config.json`).
 
+---
 
+## preview/ (PDF preview service)
+
+See **[`preview/README.md`](preview/README.md)** for the overview, deploy steps, and operations.
+
+Short version: deploy with `python preview/setup.py` (interactive, idempotent). After that the service runs unattended on Cloud Run, triggered by Wrike webhooks, with a Cloud Scheduler reconcile loop that catches missed events and walks historical attachments.
+
+Spec and implementation plan live under [`docs/superpowers/`](docs/superpowers/).

@@ -19,6 +19,9 @@ BATCH_SIZE = 3  # max jobs drained per /tick invocation; tunable
 
 
 def _make_app():
+    """Build the Flask app and wire up the four routes against module-level
+    `store` and `wrike` singletons. Called once at module import; the result
+    is bound to the module-level `app` for the WSGI server to discover."""
     app = Flask(__name__)
 
     project = os.environ.get("GOOGLE_CLOUD_PROJECT", "local-dev")
