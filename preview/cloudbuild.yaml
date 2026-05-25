@@ -1,0 +1,22 @@
+steps:
+- name: gcr.io/cloud-builders/docker
+  id: pull-previous
+  entrypoint: bash
+  args:
+  - -c
+  - docker pull ${_IMAGE}:latest || echo "no previous image yet"
+- name: gcr.io/cloud-builders/docker
+  id: build
+  args:
+  - build
+  - --cache-from
+  - ${_IMAGE}:latest
+  - -t
+  - ${_IMAGE}:latest
+  - .
+images:
+- ${_IMAGE}:latest
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/PROJECT/preview/server
+options:
+  logging: CLOUD_LOGGING_ONLY
